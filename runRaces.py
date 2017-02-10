@@ -26,10 +26,10 @@ def train_test_split(df):
 
 def fitModel(df_train, df_test, est):
     est.fit(df_train.drop(['win','position','market_id'],axis=1), df_train['win'])
-    print(df_test.market_id.isnull().sum())
     #if est.predict_proba:
     #to_predict = df_test.drop(['win','position','market_id'], axis=1)
-    predictions = est.predict_proba(df_test)[:,1]
+    print(df_test.isnull().sum())
+    predictions = est.predict_proba(df_test.drop(['win','position','market_id'],axis=1))[:,1]
     #else:
     #predictions = est.predict(df_test.drop(df_test[['win','position','market_id']],axis=1))[:,0]
     
