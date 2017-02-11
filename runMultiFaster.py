@@ -6,42 +6,37 @@ import numpy as np
 def addOdds(classAndProb, all_odds):
     df_odds = all_odds[all_odds['runner_id'].isin(classAndProb.runner_id)]
     average_win_odds = df_odds.groupby(['runner_id'])['odds_one_win'].mean()
+    
+    #if there are no odds for a horse, we're going to drop it.
     average_win_odds[average_win_odds == 0] = np.nan
-
     average_win_odds = pd.DataFrame(average_win_odds).reset_index().rename(columns={'odds_one_win':'odds'})
     average_win_odds = average_win_odds.dropna(subset=['odds'])
 
     return classAndProb.merge(average_win_odds, on='runner_id')
 
 
-
-def trainTestSplit(raceData):
-    market_ids = raceData[:,-1]
-    training_races = np.random.choice(market_ids,size=int(round(0.7*market_ids.shape[0],0)),replace=False)
-    trainMask = np.in1d(market_ids,training_races)
-    train = raceData[trainMask]
-    test = raceData[~trainMask]
-    return (train, test)
-
-def fitModel(train, test,  est=None, runnersClasses=None ):
+def fitModel(train, test,  est=None, test_market_ids=None, runnersClasses=None):
     
     print('fitting estimator')
-    est.fit(train[:, 0:-3], train[:, -2])
+    est.fit(train[:, :-1], train[:, -1])    
     
     print('making predictions')
-    probs = est.predict_proba(test[:, 0:-3])
-
-    colsToAdd = list(np.arange(probs.shape[1]))
+    probs = est.predict_proba(test[:, :-1])
+    
+     
+    colsToAdd = list(np.arange(probs.shape[1])) # how many classes did we make predictions for
+    probs = np.hstack((probs, test_market_ids[:, np.newaxis]))
     colsToAdd.append('market_id')
-    market_ids = test[:, -1].T
-
-    probs = np.hstack((probs, market_ids[:, np.newaxis]))
-    probs_df = pd.DataFrame(probs, columns=colsToAdd)
-
+    
+    #now we have a df with each race as a row and each column the prob. an individual horse winning
+    probs_df = pd.DataFrame(probs, columns=colsToAdd) 
+    
+    #reshape that data frame where each row corresponds to a horse, its probability and its race
     probs_re = probs_df.set_index('market_id').stack().reset_index().rename(columns={0:'prob', 'level_1':'class'})
 
     probs_re['class'] = probs_re['class'].astype(float)
-
+    
+    #merge in the runner_id for eahc horse, so we can later use it to get the horse's odds.
     classAndProb = probs_re.merge(runnersClasses, on=['market_id', 'class'])    
     return classAndProb
 
@@ -57,12 +52,24 @@ def placeBets(df):
     return investment_return
 
 
-def runRaces(data=None, runnersClasses=None, winOrNot=None, est=None, allOdds=None, n_trials=1):
+def runRaces(data=None, est=None, allOdds=None, n_trials=1):
+    from shapeRaces import makeRaces
+    from sklearn.cross_validation import train_test_split
+
+    print('reshaping data')
+    raceData, runnerClassDf, market_ids = makeRaces(data)
+    winOrNot = data[['win', 'runner_id']]
+    
     payouts = np.array([])
     for i in range(n_trials):
         print('trial {}'.format(i))
-        train, test = trainTestSplit(data)
-        classAndProb = fitModel(train, test, est=est, runnersClasses=runnersClasses)
+        train, test, train_market_ids, test_market_ids = train_test_split(raceData, market_ids)
+        classAndProb = fitModel(train, 
+                                test, 
+                                est=est, 
+                                test_market_ids=test_market_ids, 
+                                runnersClasses=runnerClassDf)
+        
         classAndProb = addOdds(classAndProb, allOdds)
         classAndProb = classAndProb.merge(winOrNot, on='runner_id')
         payout = placeBets(classAndProb)
