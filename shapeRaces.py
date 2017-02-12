@@ -16,7 +16,6 @@ def shapeToRaces(race):
         
     #drop unneccesary columns before we go to straight numpy arrays
     race = race.drop(['horse_id', 'win','position', 'runner_id', 'market_id'], axis=1)
-        
     #stack horse from the race into one flat row
     st = race.stack().to_frame().T #stack it
         

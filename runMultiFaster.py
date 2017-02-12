@@ -15,6 +15,17 @@ def addOdds(classAndProb, all_odds):
     return classAndProb.merge(average_win_odds, on='runner_id')
 
 
+def trainTestSplit(data, market_ids):
+    data = data.sort_values(by='market_id')
+    numRaces = data.shape[0]
+    train_end = np.floor(0.7 * num_races)
+    train = data.iloc[:train_end, :]
+    test = data.iloc[:train_end, :]
+    sorted_ids = np.sort(market_ids)
+    train_ids = sorted_ids[:train_end]
+    test_ids = sorted_ids[train_end:]
+    
+
 def fitModel(train, test,  est=None, test_market_ids=None, runnersClasses=None):
     
     print('fitting estimator')
@@ -36,7 +47,7 @@ def fitModel(train, test,  est=None, test_market_ids=None, runnersClasses=None):
 
     probs_re['class'] = probs_re['class'].astype(float)
     
-    #merge in the runner_id for eahc horse, so we can later use it to get the horse's odds.
+    #merge in the runner_id for each horse, so we can later use it to get the horse's odds.
     classAndProb = probs_re.merge(runnersClasses, on=['market_id', 'class'])    
     return classAndProb
 
@@ -55,14 +66,18 @@ def placeBets(df):
 def runRaces(data=None, est=None, allOdds=None, n_trials=1):
     from shapeRaces import makeRaces
     from sklearn.cross_validation import train_test_split
+    data = data.reindex(np.random.permutation(data.index))
 
     print('reshaping data')
     raceData, runnerClassDf, market_ids = makeRaces(data)
     winOrNot = data[['win', 'runner_id']]
-    
+    bestPayout = -9999
+    probs = []
+    bestEst = None
     payouts = np.array([])
     for i in range(n_trials):
         print('trial {}'.format(i))
+        #train, test, train_market_ids, test_market_ids = trainTestSplit(raceData, market_ids )
         train, test, train_market_ids, test_market_ids = train_test_split(raceData, market_ids)
         classAndProb = fitModel(train, 
                                 test, 
@@ -74,6 +89,9 @@ def runRaces(data=None, est=None, allOdds=None, n_trials=1):
         classAndProb = classAndProb.merge(winOrNot, on='runner_id')
         payout = placeBets(classAndProb)
         payouts = np.append(payouts, payout)
-        
+        probs.append(classAndProb)
+        if payout > bestPayout:
+            bestEst = est
+      
     print('mean payout: {}, std payout: {}'.format(np.mean(payouts), np.std(payouts)))
-    
+    return payouts, probs, bestEst
